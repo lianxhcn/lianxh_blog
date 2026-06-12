@@ -1,0 +1,446 @@
+---
+title: "带有样本选择的 DID 和 CiC：模拟附件"
+subtitle: "Viviens (2026) 方法的一个最小可运行示例"
+author: "连享会 (lianxh.cn)"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+    self_contained: true
+  html_notebook:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,        # 显示代码，类似 .ipynb
+  eval = TRUE,        # 执行代码
+  message = FALSE,
+  warning = FALSE,
+  comment = "#>",
+  fig.align = "center",
+  fig.width = 8.5,
+  fig.height = 5.2,
+  dpi = 160,
+  fig.path = "figures/"
+)
+
+# 为了保证从任意代码块开始运行时也不容易报错，这里统一设置全局参数。
+SEED <- 20260612
+SAMPLE_SIZE <- 5000
+MC_REPS <- 200
+RUN_MC <- TRUE
+
+FIG_DIR <- "figures"
+OUT_DIR <- "outputs"
+
+dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+set.seed(SEED)
+```
+
+# 说明
+
+这个 `.Rmd` 是推文的**附件**，不是完整推文。它的作用是复现推文第 7 节中的模拟：在真实 $ATT_{AO}=0$ 的数据生成过程中，朴素完全案例 CiC 可能稳定地估出正效应；修剪边界则会覆盖真实值，并且边界宽度随 AO 层占比下降而迅速扩大。
+
+文档设置为 `html_notebook` 输出。点击 RStudio 的 `Knit` 后，代码、表格和图形都会显示在 HTML 中，效果接近 `.ipynb`。若要生成一个便于独立分享的 HTML 文件，可以在 RStudio 的 Knit 下拉菜单中选择 `Knit to HTML`，或把 YAML 中的输出切换为 `html_document`。
+
+本版额外做了一点调整：图形不仅会嵌入 HTML，也会**显式保存到本地 `figures/` 文件夹**，便于随后上传图床。下面这段代码会显示当前工作目录，后续图片会保存在这个目录下的 `figures/` 中。
+
+```{r local-path-check}
+getwd()
+list.dirs(".", recursive = FALSE)
+```
+
+# 1. 数据生成过程
+
+模拟采用两期面板数据。$G_i=1$ 表示处理组，$S_{i1}$ 和 $S_{i2}$ 表示工资在两期是否可观测。这里使用负向单调性，即处理可能使一部分人退出受薪就业，因此排除 OT 层，仅保留 NO、OC 和 AO 三类主层。
+
+真实的 AO 层处理效应设为 0。朴素估计出现偏差，不是因为能力混杂本身，而是因为完全案例样本中混入了 OC 层，使对照组第二期趋势被拖低。
+
+```{r data-generating-process}
+# 生成两期面板数据：
+# - G 为处理组指示变量
+# - V 为主层类型：NO、OC、AO
+# - S1/S2 为工资是否可观测
+# - Y1/Y2 为两期对数工资
+#
+# pOC 控制 OC 层比例；drop 控制 OC 层第二期结果相对 AO 层的下滑幅度。
+gen_data <- function(N = 5000, pOC = 0.06, drop = 0.45) {
+  G <- rbinom(N, 1, 0.5)                 # 处理组指示
+  A <- rnorm(N, mean = 0.3 * G, sd = 1)  # 能力：影响工资，且与处理混杂
+  W <- runif(N)                          # 工作依附度：决定主层，与 G 独立
+
+  # 负向单调性：排除 OT 层，只保留 NO、OC、AO 三类。
+  V <- ifelse(
+    W < 0.06, "NO",
+    ifelse(W < 0.06 + pOC, "OC", "AO")
+  )
+
+  # 第一期工资对 NO 层不可观测；第二期工资对 AO 层可观测，
+  # OC 层只在对照状态下可观测。
+  S1 <- as.integer(V != "NO")
+  S2 <- ifelse(
+    V == "AO", 1L,
+    ifelse(V == "OC", as.integer(G == 0), 0L)
+  )
+
+  # AO 层满足 CiC：未处理潜在工资由同一个单调结构生成。
+  e1 <- rnorm(N, 0, 0.30)
+  e2 <- rnorm(N, 0, 0.30)
+
+  Y1 <- 1.5 + A + e1
+  Y2 <- 1.7 + 1.1 * A + e2              # AO 层真实处理效应为 0
+
+  # OC 层不需要满足 AO 层结果模型。这里人为设置其第二期工资下滑，
+  # 它会污染完全案例中的对照组趋势。
+  oc <- V == "OC"
+  Y2[oc] <- 1.7 + 1.1 * A[oc] - drop + e2[oc]
+
+  Y1[S1 == 0] <- NA
+  Y2[S2 == 0] <- NA
+
+  data.frame(G, V, S1, S2, Y1, Y2)
+}
+```
+
+# 2. 估计函数
+
+下面实现三个量：
+
+- 朴素完全案例 CiC 估计。
+- 负向单调性下的 $\pi_0$ 插补。
+- 负向单调性下的 $QTT_{AO}(q)$ 修剪边界。
+
+```{r estimators}
+# 左连续经验分位数：
+# Q(q) = inf{y: F(y) >= q}
+# 对应 R 中 quantile(..., type = 1)。
+Qhat <- function(x, q) {
+  quantile(
+    x,
+    probs = pmin(pmax(q, 0), 1),
+    type = 1,
+    names = FALSE,
+    na.rm = TRUE
+  )
+}
+
+# 经验分布函数 F(y)。
+Fhat <- function(x, y) {
+  x <- x[!is.na(x)]
+  ecdf(x)(y)
+}
+
+# 朴素完全案例 CiC。
+# 它把两期都有工资的人直接当作可比样本。
+cic_naive <- function(d) {
+  cc <- d[d$S1 == 1 & d$S2 == 1, ]
+
+  cf <- Qhat(
+    x = cc$Y2[cc$G == 0],
+    q = Fhat(cc$Y1[cc$G == 0], cc$Y1[cc$G == 1])
+  )
+
+  mean(cc$Y2[cc$G == 1], na.rm = TRUE) - mean(cf, na.rm = TRUE)
+}
+
+# Lemma 1 + Proposition 2：
+# 负向单调性下 pi1 = 1，pi0 需要用选择方程插补。
+pi0_hat <- function(d) {
+  ES <- function(g, t) mean(d[d$G == g, paste0("S", t)])
+  (ES(0, 1) / ES(0, 2)) * (ES(1, 2) / ES(1, 1))
+}
+
+# Proposition 1：
+# 负向单调性下 pi1 = 1，只需要修剪对照组观测分布。
+qtt_bounds <- function(d, qs, pi0) {
+  obs <- d[d$S2 == 1, ]
+
+  y1_t <- obs$Y1[obs$G == 1]
+  y2_t <- obs$Y2[obs$G == 1]
+  y1_c <- obs$Y1[obs$G == 0]
+  y2_c <- obs$Y2[obs$G == 0]
+
+  q_lb <- pmin(Fhat(y1_c, Qhat(y1_t, qs)) + (1 - pi0), 1)
+  q_ub <- pmax(Fhat(y1_c, Qhat(y1_t, qs)) - (1 - pi0), 0)
+
+  data.frame(
+    q  = qs,
+    LB = Qhat(y2_t, qs) - Qhat(y2_c, q_lb),
+    UB = Qhat(y2_t, qs) - Qhat(y2_c, q_ub)
+  )
+}
+```
+
+# 3. 单次模拟：两个 AO 占比场景
+
+这里设置两个场景：
+
+- 场景 A：OC 层比例较低，AO 占比较高。
+- 场景 B：OC 层比例较高，AO 占比较低。
+
+`ATT_AO` 的边界用 $QTT_{AO}(q)$ 边界在分位数网格上的简单平均近似。
+
+```{r run-one-function}
+run_one <- function(label, pOC) {
+  d <- gen_data(N = SAMPLE_SIZE, pOC = pOC, drop = 0.45)
+
+  pi0 <- pi0_hat(d)
+  true_pi0 <- mean(d$V[d$G == 0 & d$S2 == 1] == "AO")
+  naive <- cic_naive(d)
+
+  qs_att  <- seq(0.05, 0.95, by = 0.005)
+  qs_plot <- seq(0.05, 0.85, by = 0.005)
+
+  b_att  <- qtt_bounds(d, qs_att,  pi0)
+  b_plot <- qtt_bounds(d, qs_plot, pi0)
+
+  att_lb <- mean(b_att$LB)
+  att_ub <- mean(b_att$UB)
+
+  list(
+    label = label,
+    data = d,
+    bounds = b_plot,
+    summary = data.frame(
+      scenario = label,
+      true_pi0 = true_pi0,
+      pi0_hat = pi0,
+      naive_cic = naive,
+      att_lb = att_lb,
+      att_ub = att_ub
+    )
+  )
+}
+
+set.seed(SEED)
+
+case_A <- run_one(
+  label = "场景 A：AO 占比较高",
+  pOC = 0.06
+)
+
+case_B <- run_one(
+  label = "场景 B：AO 占比较低",
+  pOC = 0.24
+)
+
+single_run_results <- rbind(case_A$summary, case_B$summary)
+
+# 保存结果表，便于后续检查。
+write.csv(
+  single_run_results,
+  file = file.path(OUT_DIR, "single_run_results.csv"),
+  row.names = FALSE
+)
+
+single_run_results
+```
+
+# 4. 绘图函数与本地保存函数
+
+下面定义两个函数：
+
+- `plot_bounds_inline()`：在 HTML 中直接显示图形；
+- `save_bounds_png()`：把同一张图保存到本地 `figures/` 文件夹。
+
+这样处理的好处是：推文附件中能看到运行结果，本地文件夹里也能拿到高清 PNG。
+
+```{r plotting-and-saving-functions}
+plot_bounds_inline <- function(case) {
+  b <- case$bounds
+  s <- case$summary
+
+  naive <- s$naive_cic
+  pi0 <- s$pi0_hat
+  title_main <- paste0(case$label, "：pi0_hat = ", round(pi0, 3))
+
+  yr <- range(c(b$LB, b$UB, 0, naive), finite = TRUE)
+  pad <- 0.08 * diff(yr)
+
+  plot(
+    b$q, b$LB,
+    type = "n",
+    xlim = range(b$q),
+    ylim = c(yr[1] - pad, yr[2] + pad),
+    xlab = "分位数 q",
+    ylab = expression(QTT[AO](q)),
+    main = title_main,
+    family = "sans"
+  )
+
+  polygon(
+    x = c(b$q, rev(b$q)),
+    y = c(b$LB, rev(b$UB)),
+    col = rgb(0.2, 0.45, 0.85, 0.22),
+    border = NA
+  )
+
+  lines(b$q, b$LB, lwd = 2)
+  lines(b$q, b$UB, lwd = 2)
+  abline(h = 0, lwd = 1.5)
+  abline(h = naive, lwd = 1.5, lty = 2)
+
+  legend(
+    "topright",
+    legend = c(
+      "QTT 边界",
+      "下界",
+      "上界",
+      "真实效应 = 0",
+      paste0("朴素 CiC = ", round(naive, 3))
+    ),
+    lwd = c(8, 2, 2, 1.5, 1.5),
+    lty = c(1, 1, 1, 1, 2),
+    bty = "n",
+    cex = 0.90
+  )
+}
+
+save_bounds_png <- function(case, filename, width = 1200, height = 720, res = 160) {
+  dir.create(dirname(filename), showWarnings = FALSE, recursive = TRUE)
+
+  png(
+    filename = filename,
+    width = width,
+    height = height,
+    res = res
+  )
+
+  plot_bounds_inline(case)
+  dev.off()
+
+  # 返回规范化后的本地路径，便于在 RStudio Console 或 HTML 输出中确认文件位置。
+  normalizePath(filename, winslash = "/", mustWork = FALSE)
+}
+```
+
+# 5. 图 1：AO 占比较高
+
+这张图对应场景 A。此时 $\hat\pi_0$ 约为 0.94，说明对照组观测样本中绝大多数人属于 AO 层。上下界在分布中段较窄，并且覆盖真实效应零线。虚线为朴素完全案例 CiC 估计，可以看到，即使真实效应为零，朴素估计仍给出一个正的工资增长。
+
+```{r figure-scenario-a, fig.cap="场景 A：AO 占比较高时的 QTT 边界"}
+plot_bounds_inline(case_A)
+
+fig_A_path <- save_bounds_png(
+  case_A,
+  file.path(FIG_DIR, "fig_viviens_cic_bounds_scenario_a.png")
+)
+
+fig_A_path
+```
+
+# 6. 图 2：AO 占比较低
+
+这张图对应场景 B。此时 $\hat\pi_0$ 约为 0.75，边界明显变宽，尾部几乎失去信息量。这不是估计程序出错，而是样本选择更严重时，数据本身无法支持更窄的识别结论。
+
+```{r figure-scenario-b, fig.cap="场景 B：AO 占比较低时的 QTT 边界"}
+plot_bounds_inline(case_B)
+
+fig_B_path <- save_bounds_png(
+  case_B,
+  file.path(FIG_DIR, "fig_viviens_cic_bounds_scenario_b.png")
+)
+
+fig_B_path
+```
+
+# 7. 本地输出文件检查
+
+运行到这里后，本地 `figures/` 文件夹中应当已经有两张 PNG 图片。下面列出图片路径，便于直接定位和上传图床。
+
+```{r saved-file-check}
+list.files(FIG_DIR, pattern = "\\.png$", full.names = TRUE)
+```
+
+# 8. 蒙特卡洛检查
+
+为了确认单次模拟不是偶然结果，下面重复运行 200 次。若机器较慢，可以在 `setup` 代码块中把 `MC_REPS <- 200` 改为 `MC_REPS <- 50`；若暂时不想运行蒙特卡洛，可以把 `RUN_MC <- TRUE` 改成 `RUN_MC <- FALSE`。
+
+```{r monte-carlo-function}
+mc_one <- function(pOC = 0.06) {
+  d <- gen_data(N = SAMPLE_SIZE, pOC = pOC, drop = 0.45)
+  pi0 <- pi0_hat(d)
+
+  qs_att <- seq(0.05, 0.95, by = 0.005)
+  b <- qtt_bounds(d, qs_att, pi0)
+
+  c(
+    pi0_hat = pi0,
+    naive_cic = cic_naive(d),
+    att_lb = mean(b$LB),
+    att_ub = mean(b$UB),
+    cover_zero = as.numeric(mean(b$LB) <= 0 & mean(b$UB) >= 0)
+  )
+}
+```
+
+```{r monte-carlo-run}
+if (RUN_MC) {
+  set.seed(SEED + 1)
+
+  mc_mat <- replicate(MC_REPS, mc_one(pOC = 0.06))
+  mc_df <- as.data.frame(t(mc_mat))
+
+  mc_summary <- data.frame(
+    statistic = c(
+      "pi0_hat_mean",
+      "naive_cic_mean",
+      "naive_cic_sd",
+      "att_lb_mean",
+      "att_ub_mean",
+      "coverage_zero"
+    ),
+    value = c(
+      mean(mc_df$pi0_hat),
+      mean(mc_df$naive_cic),
+      sd(mc_df$naive_cic),
+      mean(mc_df$att_lb),
+      mean(mc_df$att_ub),
+      mean(mc_df$cover_zero)
+    )
+  )
+
+  write.csv(
+    mc_df,
+    file = file.path(OUT_DIR, "monte_carlo_raw_results.csv"),
+    row.names = FALSE
+  )
+
+  write.csv(
+    mc_summary,
+    file = file.path(OUT_DIR, "monte_carlo_summary.csv"),
+    row.names = FALSE
+  )
+
+  mc_summary
+} else {
+  cat("RUN_MC = FALSE，已跳过蒙特卡洛模拟。")
+}
+```
+
+# 9. 结果解读
+
+从单次模拟和蒙特卡洛结果可以看到三个结论。
+
+一是 $\pi_0$ 的插补结果与真实 AO 占比较接近。这里的关键是主层由工作依附度 `W` 决定，而 `W` 与组别 `G` 独立；若让主层直接由能力 `A` 决定，由于 `A` 与处理组身份相关，选择方程中的独立性条件会被破坏。
+
+二是朴素完全案例 CiC 会产生稳定的正偏。它把两期都有工资的人直接拿来比较，看似避开了缺失问题，实际上改变了比较对象。OC 层污染了对照组第二期趋势，使反事实工资被低估，从而把真实为零的效应估成正值。
+
+三是修剪边界的宽度主要由 AO 层占比决定。场景 A 中 AO 占比较高，边界仍有一定信息量；场景 B 中 AO 占比较低，边界迅速变宽。这个结果不应被理解为方法“效率低”，而应理解为部分识别方法对数据可支持结论的诚实表达。
+
+# 10. 会话信息
+
+为了便于复现，文档最后记录本地 R 环境。
+
+```{r session-info}
+sessionInfo()
+```
