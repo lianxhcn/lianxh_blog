@@ -1,0 +1,4 @@
+results/
+results_stata/
+__pycache__/
+*.pyc

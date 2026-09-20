@@ -1,0 +1,66 @@
+{
+  "content_version": "v08",
+  "retrieved_date": "2026-09-20",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+      "bytes": 9
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "52cd7ad2a00c30f83cf5379c58e47b13a1597302fc169b9a0b188d308c58d3c9",
+      "bytes": 47
+    },
+    {
+      "path": "continuous_did_decomposition.py",
+      "sha256": "5fc5e6219ae6019ed3c6947c7d760de50a74c1636cb2e85dff397e4fc3b07326",
+      "bytes": 8514
+    },
+    {
+      "path": "continuous_did_stata_demo.do",
+      "sha256": "00a4ccf3793081438a1fd94b7c73886c95178b741ea5501bf2b0bf92da65ec75",
+      "bytes": 6229
+    },
+    {
+      "path": "continuous_did_stata_minimal.do",
+      "sha256": "5fedc1ca8b582acb6efd64516ae42a0315a9c50083aac1dcf5ca9dc80a4c2d3a",
+      "bytes": 2184
+    },
+    {
+      "path": "figs/raw/continuous-did-fig01-between-within-20260920-161338.png",
+      "sha256": "6c78bb8209ec1d333091ccbf715f9b528ef4679963439c1f16ccae862260c0cd",
+      "bytes": 82899
+    },
+    {
+      "path": "figs/raw/continuous-did-fig02-same-beta-20260920-161338.png",
+      "sha256": "5da9ae431d92d1305886887f2a072b9be205ff6bd472855d49357df0fb516460",
+      "bytes": 65448
+    },
+    {
+      "path": "figs/raw/continuous-did-fig03-control-share-20260920-161338.png",
+      "sha256": "2616f7bcc1bdc146872eee1541aad5291ed068c4efbb01bbd389fdcc9f3f24db",
+      "bytes": 92161
+    },
+    {
+      "path": "figs/uploaded-images.md",
+      "sha256": "43868a3317b871db02e4cb75df1605ac6a8a8817501835c50cab971f2f9c7adf",
+      "bytes": 477
+    },
+    {
+      "path": "preview.html",
+      "sha256": "716e0de2feaeb52e5c2e7485a39c4312c3a62fe93be123e0310c9886219c0266",
+      "bytes": 437296
+    },
+    {
+      "path": "README.md",
+      "sha256": "67d0dd794e3aa105511e0ade522d47e68428f615cd24e98db49454ae5bf8d94b",
+      "bytes": 2108
+    },
+    {
+      "path": "连续DID系数分解-原理适用条件与实现-连小白-v08.md",
+      "sha256": "a876774a8434176c3a23540555e5f282261ed13d4e499533d4d100cd16ef85b1",
+      "bytes": 48804
+    }
+  ]
+}
