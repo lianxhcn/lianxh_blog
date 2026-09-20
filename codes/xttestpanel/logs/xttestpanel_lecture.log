@@ -1,0 +1,1090 @@
+---------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  G:\codex_project\xttestpanel\logs/xttestpanel_lecture.log
+  log type:  text
+ opened on:  19 Sep 2026, 17:06:38
+
+. 
+. *----------------------------------------------------------------------*
+. * 0. 环境检查
+. *----------------------------------------------------------------------*
+. 
+. * 这里把当前项目中的作者 ado 和 help 文件加入 Stata 搜索路径。
+. * 如果你已经通过 net install 安装，可以保留这一行，不会影响使用。
+. adopath ++ "x"
+  [1]              "x"
+  [2]  (BASE)      "D:\stata19\ado\base/"
+  [3]  (SITE)      "D:\stata19\ado\site/"
+  [4]              "."
+  [5]  (PERSONAL)  "D:/stata/personal/"
+  [6]  (PLUS)      "D:/stata/plus/"
+  [7]  (OLDPLACE)  "c:\ado/"
+  [8]              "D:/stata/personal//_myado"
+  [9]              "D:\stata\personal\adolian\_ado"
+
+. discard
+
+. 
+. * 每次运行使用新的图片文件名，避免覆盖已上传或已引用的图片。
+. local run_date = string(daily("`c(current_date)'", "DMY"), ///
+>     "%tdCCYYNNDD")
+
+. local run_time = subinstr("`c(current_time)'", ":", "", .)
+
+. local figure_stamp "`run_date'-`run_time'"
+
+. 
+. which xttestpanel
+x\xttestpanel.ado
+*! xttestpanel 1.0.0  09jun2026
+*! Post-estimation diagnostic test suite for linear panel-data models
+*! Author: Merwan Roudane  <merwanroudane920@gmail.com>
+*! GitHub: https://github.com/merwanroudane
+*!
+*! Implements:
+*!   het      Heteroskedasticity     Juhl & Sosa-Escudero (2014) FE; Holly-Gardio
+> l RE;
+*!                                    Feng, Li, Tong & Luo (2020) two-way FE
+*!   serial   Serial correlation     Baltagi & Li (1995) / Baltagi, Jung & Song (
+> 2010);
+*!                                    Bin Chen (2022) robust; Wooldridge (2002)
+*!   csd      Cross-section depend.   Pesaran (2004) CD; Baltagi, Kao & Peng (201
+> 6)
+*!                                    bias-corrected CD; Breusch-Pagan (1980) LM
+*!   func     Functional form        Lin, Li & Sun (2014) nonparametric FE test
+*!   hausman  Specification          classical Hausman; Beyaztas et al. (2021) ro
+> bust
+*!   vif      Multicollinearity      within-group VIF; Ismaeel, Midi & Sani (2021
+> ) RVIF
+*!   all      Run the whole suite and print a combined report (+ optional dashboa
+> rd)
+
+. help xttestpanel
+request ignored because of batch mode
+
+. 
+. display as text _newline "xttestpanel 是线性面板模型的诊断工具。"
+
+xttestpanel 是线性面板模型的诊断工具。
+
+. display as text "它帮助我们检查误差结构、模型设定和解释变量问题。"
+它帮助我们检查误差结构、模型设定和解释变量问题。
+
+. display as text "它不是自动修正工具；诊断后仍需要研究者判断。"
+它不是自动修正工具；诊断后仍需要研究者判断。
+
+. 
+. *----------------------------------------------------------------------*
+. * 1. 基本语法
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "基本语法"
+基本语法
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. display as text "推荐用法：先估计模型，再运行 postestimation 诊断。"
+推荐用法：先估计模型，再运行 postestimation 诊断。
+
+. display as text "    xtset id year"
+    xtset id year
+
+. display as text "    xtreg y x1 x2 x3, fe"
+    xtreg y x1 x2 x3, fe
+
+. display as text "    xttestpanel all"
+    xttestpanel all
+
+. 
+. display as text _newline "也可以使用 standalone 用法。"
+
+也可以使用 standalone 用法。
+
+. display as text "    xttestpanel all y x1 x2 x3, model(fe)"
+    xttestpanel all y x1 x2 x3, model(fe)
+
+. 
+. display as text _newline "常用选项包括："
+
+常用选项包括：
+
+. display as text "    model(fe|re|tw|pool): 指定工作模型"
+    model(fe|re|tw|pool): 指定工作模型
+
+. display as text "    graph: 输出单项诊断图"
+    graph: 输出单项诊断图
+
+. display as text "    dashboard: 在 all 中输出组合诊断图"
+    dashboard: 在 all 中输出组合诊断图
+
+. display as text "    lags(#): serial 检验中的滞后阶数"
+    lags(#): serial 检验中的滞后阶数
+
+. display as text "    reps(#): func 检验中的 wild bootstrap 次数"
+    reps(#): func 检验中的 wild bootstrap 次数
+
+. 
+. *----------------------------------------------------------------------*
+. * 2. 教学模拟数据：把常见面板问题故意放进 DGP
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "教学模拟例子：数据中故意包含多种面板诊断问题"
+教学模拟例子：数据中故意包含多种面板诊断问题
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. set seed 20260609
+
+. local N = 50
+
+. local T = 20
+
+. set obs `=`N' * `T''
+Number of observations (_N) was 0, now 1,000.
+
+. 
+. gen long id = ceil(_n / `T')
+
+. bysort id: gen int t = _n
+
+. xtset id t
+
+Panel variable: id (strongly balanced)
+ Time variable: t, 1 to 20
+         Delta: 1 unit
+
+. 
+. * 个体效应 mu 与 x1 相关，因此 RE 的核心外生性条件不成立。
+. bysort id (t): gen double mu = rnormal() if _n == 1
+(950 missing values generated)
+
+. bysort id (t): replace mu = mu[1]
+(950 real changes made)
+
+. 
+. gen double x1 = 0.6 * mu + rnormal()
+
+. gen double x2 = 0.4 * x1 + rnormal()
+
+. gen double x3 = 0.95 * x2 + 0.1 * rnormal()
+
+. gen double x4 = rnormal()
+
+. 
+. * 共同时间因子 ftime 会让不同个体的误差项相关。
+. bysort id (t): gen double load = 0.6 + abs(rnormal()) if _n == 1
+(950 missing values generated)
+
+. bysort id (t): replace load = load[1]
+(950 real changes made)
+
+. bysort t (id): gen double ftime = rnormal() if _n == 1
+(980 missing values generated)
+
+. bysort t (id): replace ftime = ftime[1]
+(980 real changes made)
+
+. 
+. * idiosyncratic error 同时包含 AR(1) 和随 x4 变化的方差。
+. sort id t
+
+. gen double e = .
+(1,000 missing values generated)
+
+. replace e = rnormal() * sqrt(exp(0.4 * x4)) if t == 1
+(50 real changes made)
+
+. replace e = 0.5 * L.e + rnormal() * sqrt(exp(0.4 * x4)) if t > 1
+(950 real changes made)
+
+. 
+. gen double u = mu + load * ftime + e
+
+. 
+. * 真正的数据生成过程包含 x2^2，但估计模型故意遗漏该非线性项。
+. gen double y = 1 + 1.0 * x1 + 0.8 * x2 + 0.5 * x2^2 - 0.3 * x4 + u
+
+. 
+. summarize y x1 x2 x3 x4
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+           y |      1,000    1.794604    2.974493  -6.403485   12.51999
+          x1 |      1,000    .0273153    1.163496  -3.877451   3.083017
+          x2 |      1,000    -.067321    1.083019  -3.503844   3.124334
+          x3 |      1,000   -.0581668    1.034518  -3.237944   3.001735
+          x4 |      1,000   -.0189477    .9629415  -3.136441   2.701123
+
+. 
+. *----------------------------------------------------------------------*
+. * 3. Standalone 用法：直接给 depvar 和 indepvars
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "Standalone 用法：xttestpanel all y x1 x2 x3 x4, model(fe)"
+Standalone 用法：xttestpanel all y x1 x2 x3 x4, model(fe)
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. xttestpanel all y x1 x2 x3 x4, model(fe) dashboard reps(99)
+
+------------------------------------------------------------------------------
+  xttestpanel -- full panel diagnostic report
+  dependent variable: y   model: fe
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+Heteroskedasticity test  --  one-way fixed effects (within residuals)
+------------------------------------------------------------------------------
+H0: homoskedastic idiosyncratic disturbances
+Auxiliary regressors (z):  x1 x2 x3 x4
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Breusch-Pagan / Holly-Gardiol LM               25.2191     4   0.0000 ***
+Koenker (studentized, robust) LM               23.4542     4   0.0001 ***
+Juhl-Sosa-Escudero F (FE within)                5.9743     4   0.0001 ***
+------------------------------------------------------------------------------
+* p<.10 ** p<.05 *** p<.01.  Refs: Juhl & Sosa-Escudero (2014); Feng et al.
+(2020).
+
+------------------------------------------------------------------------------
+Serial-correlation tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: no first-order (AR/MA) serial correlation in the idiosyncratic errors
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Baltagi-Li LM (AR(1)/MA(1), 2-sided)           46.6014     1   0.0000 ***
+Born-Breitung / Wooldridge                     18.0135     1   0.0000 ***
+Bin Chen (2022) robust portmanteau             18.0135     1   0.0000 ***
+------------------------------------------------------------------------------
+rho_hat (lag-1 residual autocorr.) = 0.2095.  * p<.10 ** p<.05 *** p<.01.
+Refs: Baltagi & Li (1995); Baltagi, Jung & Song (2010); Chen (2022).
+
+------------------------------------------------------------------------------
+Cross-sectional dependence tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: cross-sectional independence (errors uncorrelated across units)
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Pesaran (2004) CD                              54.1064     .   0.0000 ***
+Baltagi-Kao-Peng (2016) bias-corr. CD          43.7399     .   0.0000 ***
+Breusch-Pagan (1980) LM                      4502.9857  1225   0.0000 ***
+Pesaran scaled LM (LM_adj)                     66.2253     .   0.0000 ***
+------------------------------------------------------------------------------
+mean|rho_ij| = 0.3716, mean rho_ij = 0.3457.
+Refs: Pesaran (2004,2015); Baltagi, Kao & Peng (2016); Breusch & Pagan (1980).
+
+------------------------------------------------------------------------------
+Multicollinearity diagnostics  --  fe (within) design
+------------------------------------------------------------------------------
+------------------------------------------------------------------------------
+Variable                          VIF    robust VIF         tol
+------------------------------------------------------------------------------
+x1                              1.137         1.126      0.8792
+x2                            103.018        99.844      0.0097
+x3                            102.880        99.757      0.0097
+x4                              1.005         1.004      0.9954
+------------------------------------------------------------------------------
+Mean VIF = 52.010, mean robust VIF = 50.433.
+Rule of thumb: VIF>10 (tol<0.1) signals serious collinearity. Robust VIF (RVIF,
+WGM-FIMGT) is resistant to high-leverage collinearity-enhancing obs.
+Ref: Ismaeel, Midi & Sani (2021).
+
+------------------------------------------------------------------------------
+Specification test: fixed vs random effects
+------------------------------------------------------------------------------
+H0: random effects estimator is consistent (cov(x, mu_i)=0)
+classical = Stata's Hausman contrast; robust = Huber-weighted Mundlak test
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Hausman chi2 (classical)                      144.2013     4   0.0000 ***
+Robust weighted Hausman (Beyaztas)            134.0867     4   0.0000 ***
+------------------------------------------------------------------------------
+Downweighted share of obs. = 16.5% (Huber tuning c=1.345).  Large gap between
+the two => influential/outlying obs.
+Decision rule: reject H0 => prefer FE.  Refs: Mundlak (1978); Beyaztas et al.
+(2021).
+
+------------------------------------------------------------------------------
+Functional-form test (Lin, Li & Sun 2014)  --  fixed effects
+------------------------------------------------------------------------------
+H0: the parametric (linear) functional form is correctly specified
+Ha: a nonparametric alternative fits better
+------------------------------------------------------------------------------
+Test                                              stat      p-val
+------------------------------------------------------------------------------
+Lin-Li-Sun J_n (standardized)                  10.7997     0.0000  (asymptotic N(
+> 0,1))
+  wild-bootstrap p-value (B=99)                            0.0100
+------------------------------------------------------------------------------
+bandwidth = 0.4217 (Silverman rule x scale).  Ref: Lin, Li & Sun (2014).
+
+------------------------------------------------------------------------------
+  SUMMARY -- decisions at 5% level
+------------------------------------------------------------------------------
+Heteroskedasticity (BP/Koenker)           p=0.0001  REJECT H0
+Serial correlation (Baltagi-Li)           p=0.0000  REJECT H0
+Serial correlation (Chen 2022)            p=0.0000  REJECT H0
+Cross-section dep. (Pesaran CD)           p=0.0000  REJECT H0
+Cross-section dep. (BKP 2016)             p=0.0000  REJECT H0
+Functional form (Lin-Li-Sun)              p=0.0100  REJECT H0
+FE vs RE (Hausman)                        p=0.0000  REJECT H0
+------------------------------------------------------------------------------
+  Mean VIF = 52.010 (collinearity if >10).
+------------------------------------------------------------------------------
+
+. 
+. scalar sim_p_het = r(p_het)
+
+. scalar sim_p_serial = r(p_serial)
+
+. scalar sim_p_csd = r(p_csd)
+
+. scalar sim_p_func = r(p_func)
+
+. scalar sim_p_hausman = r(p_hausman)
+
+. scalar sim_mean_vif = r(mean_vif)
+
+. 
+. tempname summary_handle
+
+. tempfile summary_data
+
+. postfile `summary_handle' str18 sample str60 data_source ///
+>     double(p_het p_serial p_csd p_func p_hausman mean_vif) ///
+>     using "`summary_data'", replace
+(file C:\Users\ADMINI~1\AppData\Local\Temp\ST_1918_000001.tmp not found)
+
+. 
+. post `summary_handle' ///
+>     ("simulation") ("Deliberately misspecified panel DGP") ///
+>     (sim_p_het) (sim_p_serial) (sim_p_csd) (sim_p_func) ///
+>     (sim_p_hausman) (sim_mean_vif)
+
+. 
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig01-dashboard-`figure_stamp'.png", ///
+>     replace
+
+. 
+. display as text _newline "模拟数据的核心返回结果："
+
+模拟数据的核心返回结果：
+
+. display as text "  r(p_het)     = " as result %8.4f sim_p_het
+  r(p_het)     =   0.0001
+
+. display as text "  r(p_serial)  = " as result %8.4f sim_p_serial
+  r(p_serial)  =   0.0000
+
+. display as text "  r(p_csd)     = " as result %8.4f sim_p_csd
+  r(p_csd)     =   0.0000
+
+. display as text "  r(p_func)    = " as result %8.4f sim_p_func
+  r(p_func)    =   0.0100
+
+. display as text "  r(p_hausman) = " as result %8.4f sim_p_hausman
+  r(p_hausman) =   0.0000
+
+. display as text "  r(mean_vif)  = " as result %8.4f sim_mean_vif
+  r(mean_vif)  =  52.0100
+
+. 
+. display as text _newline "预期解释："
+
+预期解释：
+
+. display as text "  异方差检验应拒绝，因为误差方差随 x4 改变。"
+  异方差检验应拒绝，因为误差方差随 x4 改变。
+
+. display as text "  序列相关检验应拒绝，因为 idiosyncratic error 包含 AR(1)。"
+  序列相关检验应拒绝，因为 idiosyncratic error 包含 AR(1)。
+
+. display as text "  截面相关检验应拒绝，因为所有个体受到共同时间因子影响。"
+  截面相关检验应拒绝，因为所有个体受到共同时间因子影响。
+
+. display as text "  函数形式检验应拒绝，因为线性模型遗漏 x2^2。"
+  函数形式检验应拒绝，因为线性模型遗漏 x2^2。
+
+. display as text "  Hausman 检验应拒绝，因为 mu 与 x1 相关，RE 不一致。"
+  Hausman 检验应拒绝，因为 mu 与 x1 相关，RE 不一致。
+
+. display as text "  VIF 会提示 x2 和 x3 存在严重共线性。"
+  VIF 会提示 x2 和 x3 存在严重共线性。
+
+. 
+. *----------------------------------------------------------------------*
+. * 4. Postestimation 用法：先估计一次，再连续诊断
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "Postestimation 用法：先 xtreg，再 xttestpanel"
+Postestimation 用法：先 xtreg，再 xttestpanel
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. xtreg y x1 x2 x3 x4, fe
+
+Fixed-effects (within) regression               Number of obs     =      1,000
+Group variable: id                              Number of groups  =         50
+
+R-squared:                                      Obs per group:
+     Within  = 0.4202                                         min =         20
+     Between = 0.9006                                         avg =       20.0
+     Overall = 0.5290                                         max =         20
+
+                                                F(4, 946)         =     171.38
+corr(u_i, Xb) = 0.3972                          Prob > F          =     0.0000
+
+------------------------------------------------------------------------------
+           y | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+          x1 |      1.013      0.065    15.56   0.000        0.885       1.141
+          x2 |     -0.553      0.580    -0.95   0.340       -1.691       0.585
+          x3 |      1.401      0.606     2.31   0.021        0.213       2.590
+          x4 |     -0.400      0.063    -6.37   0.000       -0.524      -0.277
+       _cons |      1.804      0.060    30.30   0.000        1.687       1.920
+-------------+----------------------------------------------------------------
+     sigma_u |  1.0136793
+     sigma_e |  1.8718121
+         rho |  .22676992   (fraction of variance due to u_i)
+------------------------------------------------------------------------------
+F test that all u_i=0: F(49, 946) = 4.55                     Prob > F = 0.0000
+
+. 
+. xttestpanel het, graph
+
+------------------------------------------------------------------------------
+Heteroskedasticity test  --  one-way fixed effects (within residuals)
+------------------------------------------------------------------------------
+H0: homoskedastic idiosyncratic disturbances
+Auxiliary regressors (z): x1 x2 x3 x4
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Breusch-Pagan / Holly-Gardiol LM               25.2191     4   0.0000 ***
+Koenker (studentized, robust) LM               23.4542     4   0.0001 ***
+Juhl-Sosa-Escudero F (FE within)                5.9743     4   0.0001 ***
+------------------------------------------------------------------------------
+* p<.10 ** p<.05 *** p<.01.  Refs: Juhl & Sosa-Escudero (2014); Feng et al.
+(2020).
+
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig02-het-`figure_stamp'.png", replace
+
+. 
+. xttestpanel serial, lags(2) graph
+
+------------------------------------------------------------------------------
+Serial-correlation tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: no first-order (AR/MA) serial correlation in the idiosyncratic errors
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Baltagi-Li LM (AR(1)/MA(1), 2-sided)           46.6014     1   0.0000 ***
+Born-Breitung / Wooldridge                     18.0135     1   0.0000 ***
+Bin Chen (2022) robust portmanteau             18.9225     2   0.0001 ***
+------------------------------------------------------------------------------
+rho_hat (lag-1 residual autocorr.) = 0.2095.  * p<.10 ** p<.05 *** p<.01.
+Refs: Baltagi & Li (1995); Baltagi, Jung & Song (2010); Chen (2022).
+
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig03-serial-`figure_stamp'.png", replace
+
+. 
+. xttestpanel csd, graph
+
+------------------------------------------------------------------------------
+Cross-sectional dependence tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: cross-sectional independence (errors uncorrelated across units)
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Pesaran (2004) CD                              54.1064     .   0.0000 ***
+Baltagi-Kao-Peng (2016) bias-corr. CD          43.7399     .   0.0000 ***
+Breusch-Pagan (1980) LM                      4502.9857  1225   0.0000 ***
+Pesaran scaled LM (LM_adj)                     66.2253     .   0.0000 ***
+------------------------------------------------------------------------------
+mean|rho_ij| = 0.3716, mean rho_ij = 0.3457.
+Refs: Pesaran (2004,2015); Baltagi, Kao & Peng (2016); Breusch & Pagan (1980).
+(install heatplot -- ssc install heatplot -- for the correlation heatmap;
+matrix C holds the correlations)
+
+Residual cross-unit correlations
+
+             |     1      2      3      4      5      6      7      8      9 
+-------------+---------------------------------------------------------------
+           1 |  1.00                                                         
+           2 |  0.54   1.00                                                  
+           3 |  0.16   0.23   1.00                                           
+           4 |  0.17   0.55   0.18   1.00                                    
+           5 |  0.45   0.79   0.29   0.63   1.00                             
+           6 |  0.43   0.64   0.32   0.42   0.69   1.00                      
+           7 | -0.20  -0.21   0.19  -0.22  -0.14  -0.06   1.00               
+           8 |  0.34   0.83   0.17   0.67   0.76   0.80  -0.22   1.00        
+           9 |  0.28   0.77   0.44   0.62   0.74   0.77  -0.19   0.79   1.00 
+          10 |  0.38   0.76   0.16   0.80   0.67   0.52  -0.01   0.73   0.70 
+          11 | -0.09   0.44   0.12   0.10   0.25   0.53  -0.17   0.48   0.43 
+          12 |  0.66   0.61   0.46   0.45   0.77   0.70  -0.12   0.53   0.59 
+          13 |  0.27   0.21  -0.14   0.25   0.28  -0.04  -0.06   0.04   0.02 
+          14 | -0.09   0.32   0.32   0.23   0.32   0.46   0.23   0.28   0.50 
+          15 |  0.18   0.35   0.09   0.25   0.27   0.32   0.01   0.40   0.42 
+          16 |  0.41   0.73   0.20   0.34   0.66   0.65   0.21   0.66   0.59 
+          17 |  0.60   0.56   0.12   0.22   0.46   0.27   0.17   0.28   0.31 
+          18 |  0.58   0.58   0.24   0.17   0.51   0.65   0.03   0.52   0.47 
+          19 |  0.38   0.47   0.28   0.21   0.51   0.32  -0.09   0.27   0.52 
+          20 |  0.42   0.86   0.44   0.49   0.74   0.63  -0.10   0.70   0.70 
+          21 |  0.47   0.71   0.26   0.41   0.70   0.62   0.13   0.57   0.60 
+          22 |  0.55   0.53   0.57   0.22   0.66   0.45  -0.05   0.33   0.52 
+          23 |  0.60   0.62   0.24   0.36   0.81   0.52  -0.27   0.47   0.58 
+          24 | -0.05   0.34   0.14   0.17   0.23   0.35   0.29   0.35   0.42 
+          25 | -0.01   0.10  -0.12   0.14  -0.01   0.25   0.03   0.22   0.13 
+          26 |  0.62   0.80   0.34   0.58   0.77   0.66  -0.21   0.70   0.68 
+          27 |  0.52   0.66   0.55   0.57   0.65   0.67  -0.24   0.55   0.69 
+          28 |  0.16   0.31  -0.29   0.16   0.02  -0.06  -0.34   0.16   0.12 
+          29 |  0.49   0.71   0.26   0.49   0.72   0.76  -0.03   0.66   0.63 
+          30 |  0.50   0.62   0.23   0.25   0.66   0.75  -0.10   0.57   0.61 
+          31 |  0.51   0.50   0.10   0.39   0.54   0.50  -0.19   0.49   0.37 
+          32 |  0.48   0.57   0.23   0.34   0.69   0.69   0.11   0.55   0.51 
+          33 |  0.51   0.69   0.29   0.58   0.69   0.61  -0.55   0.65   0.69 
+          34 |  0.03   0.27  -0.16   0.53   0.20   0.05   0.22   0.22   0.08 
+          35 |  0.33   0.48  -0.35   0.32   0.33   0.21  -0.62   0.39   0.26 
+          36 |  0.31   0.51   0.16   0.29   0.33   0.70  -0.31   0.61   0.60 
+          37 |  0.44   0.47   0.10   0.08   0.33   0.37  -0.33   0.40   0.25 
+          38 |  0.79   0.69   0.22   0.56   0.73   0.53  -0.26   0.54   0.52 
+          39 |  0.47   0.56   0.21   0.51   0.63   0.75  -0.10   0.65   0.57 
+          40 |  0.11   0.20   0.02   0.18   0.34   0.05   0.25   0.01   0.08 
+          41 |  0.26   0.52   0.05   0.31   0.55   0.54  -0.21   0.51   0.59 
+          42 |  0.58   0.70   0.21   0.46   0.70   0.64  -0.35   0.58   0.69 
+          43 |  0.54   0.66   0.23   0.58   0.67   0.66  -0.43   0.71   0.66 
+          44 |  0.11   0.48   0.16   0.45   0.36   0.57  -0.15   0.61   0.63 
+          45 |  0.05   0.48   0.12   0.74   0.37   0.43  -0.05   0.68   0.48 
+          46 |  0.40   0.67   0.40   0.47   0.76   0.82  -0.04   0.68   0.73 
+          47 |  0.17   0.55  -0.05   0.45   0.34   0.27  -0.33   0.57   0.40 
+          48 |  0.37   0.31   0.11   0.24   0.63   0.37  -0.06   0.26   0.34 
+          49 |  0.19   0.38   0.41   0.09   0.27   0.38   0.36   0.49   0.39 
+          50 |  0.37   0.61   0.49   0.44   0.66   0.75  -0.07   0.70   0.74 
+
+             |    10     11     12     13     14     15     16     17     18 
+-------------+---------------------------------------------------------------
+          10 |  1.00                                                         
+          11 |  0.18   1.00                                                  
+          12 |  0.50   0.31   1.00                                           
+          13 |  0.19  -0.03   0.45   1.00                                    
+          14 |  0.29   0.30   0.23  -0.30   1.00                             
+          15 |  0.26   0.04   0.15  -0.02  -0.03   1.00                      
+          16 |  0.71   0.28   0.47  -0.06   0.43   0.03   1.00               
+          17 |  0.53   0.13   0.51   0.19   0.27   0.19   0.43   1.00        
+          18 |  0.35   0.25   0.55   0.13   0.06   0.50   0.54   0.33   1.00 
+          19 |  0.32   0.06   0.50   0.19   0.14   0.42   0.34   0.23   0.50 
+          20 |  0.65   0.55   0.67   0.20   0.45   0.05   0.69   0.49   0.44 
+          21 |  0.63   0.26   0.66   0.29   0.32   0.54   0.51   0.59   0.55 
+          22 |  0.28   0.07   0.77   0.16   0.28   0.19   0.44   0.45   0.43 
+          23 |  0.41   0.11   0.77   0.28   0.08   0.41   0.42   0.49   0.53 
+          24 |  0.46   0.36   0.15  -0.01   0.42  -0.28   0.57   0.20  -0.12 
+          25 |  0.18   0.52   0.26   0.30  -0.07  -0.12   0.10   0.09   0.06 
+          26 |  0.70   0.45   0.85   0.43   0.19  -0.01   0.64   0.53   0.45 
+          27 |  0.53   0.32   0.78   0.25   0.37   0.15   0.47   0.24   0.51 
+          28 |  0.23   0.11  -0.10   0.03  -0.06  -0.08   0.06   0.18  -0.30 
+          29 |  0.50   0.38   0.76   0.23   0.52   0.35   0.52   0.45   0.54 
+          30 |  0.43   0.31   0.61  -0.05   0.45   0.33   0.53   0.52   0.49 
+          31 |  0.33   0.31   0.71   0.43   0.17   0.25   0.13   0.56   0.16 
+          32 |  0.53   0.36   0.69   0.00   0.32   0.18   0.64   0.65   0.46 
+          33 |  0.56   0.36   0.71   0.17   0.23   0.07   0.50   0.21   0.46 
+          34 |  0.51   0.00   0.05   0.13   0.06   0.30   0.22   0.38   0.15 
+          35 |  0.38   0.14   0.22   0.31  -0.25   0.19   0.20   0.07   0.30 
+          36 |  0.39   0.35   0.34  -0.11   0.41   0.13   0.39   0.04   0.31 
+          37 |  0.22   0.26   0.41   0.14   0.00   0.46   0.10   0.36   0.54 
+          38 |  0.60   0.13   0.87   0.59   0.02   0.14   0.45   0.58   0.53 
+          39 |  0.41   0.34   0.76   0.34   0.34   0.32   0.34   0.33   0.38 
+          40 |  0.34   0.16   0.30   0.14   0.27  -0.38   0.43   0.44  -0.04 
+          41 |  0.40   0.55   0.62   0.30   0.15   0.41   0.29   0.33   0.34 
+          42 |  0.55   0.26   0.72   0.33   0.27   0.08   0.51   0.33   0.26 
+          43 |  0.66   0.19   0.57  -0.03   0.12   0.18   0.65   0.18   0.51 
+          44 |  0.47   0.73   0.45   0.13   0.26   0.08   0.30   0.28   0.17 
+          45 |  0.65   0.35   0.18  -0.03   0.16   0.19   0.37   0.18   0.07 
+          46 |  0.57   0.50   0.76   0.03   0.48   0.11   0.69   0.46   0.42 
+          47 |  0.46   0.31   0.05  -0.16  -0.09   0.41   0.27   0.15   0.25 
+          48 |  0.32  -0.08   0.58   0.37  -0.00   0.30   0.27   0.35   0.35 
+          49 |  0.33   0.06   0.06  -0.35   0.04   0.37   0.50   0.12   0.30 
+          50 |  0.41   0.29   0.64   0.07   0.27   0.63   0.39   0.20   0.70 
+
+             |    19     20     21     22     23     24     25     26     27 
+-------------+---------------------------------------------------------------
+          19 |  1.00                                                         
+          20 |  0.38   1.00                                                  
+          21 |  0.46   0.57   1.00                                           
+          22 |  0.61   0.54   0.42   1.00                                    
+          23 |  0.67   0.47   0.62   0.80   1.00                             
+          24 | -0.16   0.52   0.15   0.09  -0.09   1.00                      
+          25 | -0.11   0.15  -0.01   0.04  -0.09   0.37   1.00               
+          26 |  0.37   0.84   0.56   0.60   0.61   0.42   0.39   1.00        
+          27 |  0.52   0.78   0.54   0.63   0.54   0.19   0.12   0.75   1.00 
+          28 | -0.12   0.21   0.06  -0.05  -0.01   0.31   0.22   0.23   0.11 
+          29 |  0.49   0.71   0.71   0.62   0.58   0.17   0.23   0.66   0.78 
+          30 |  0.18   0.62   0.65   0.54   0.59   0.35   0.02   0.53   0.56 
+          31 |  0.12   0.46   0.52   0.49   0.55   0.14   0.32   0.62   0.43 
+          32 |  0.20   0.59   0.58   0.60   0.60   0.39   0.34   0.66   0.49 
+          33 |  0.63   0.67   0.36   0.58   0.63   0.06   0.14   0.77   0.78 
+          34 | -0.12   0.13   0.40  -0.10   0.08   0.03   0.12   0.13   0.12 
+          35 |  0.13   0.17   0.37   0.04   0.38  -0.14   0.14   0.36   0.26 
+          36 |  0.01   0.44   0.40   0.16   0.12   0.36   0.24   0.44   0.52 
+          37 |  0.19   0.34   0.50   0.22   0.35  -0.25  -0.06   0.27   0.27 
+          38 |  0.42   0.65   0.56   0.65   0.71   0.12   0.29   0.89   0.73 
+          39 |  0.23   0.53   0.55   0.57   0.56   0.23   0.36   0.66   0.64 
+          40 |  0.36   0.35   0.22   0.22   0.21   0.24   0.16   0.39   0.19 
+          41 |  0.64   0.40   0.54   0.45   0.67   0.09   0.34   0.54   0.37 
+          42 |  0.39   0.71   0.54   0.59   0.66   0.45   0.10   0.78   0.75 
+          43 |  0.40   0.51   0.46   0.44   0.62   0.11  -0.01   0.66   0.63 
+          44 |  0.15   0.49   0.28   0.18   0.20   0.45   0.71   0.66   0.39 
+          45 | -0.15   0.43   0.31  -0.07   0.07   0.39   0.22   0.47   0.33 
+          46 |  0.25   0.70   0.57   0.68   0.65   0.50   0.32   0.78   0.66 
+          47 |  0.23   0.41   0.32   0.00   0.20   0.00   0.06   0.31   0.33 
+          48 |  0.23   0.27   0.50   0.51   0.71   0.10  -0.12   0.36   0.28 
+          49 |  0.17   0.31   0.27   0.22   0.11   0.38  -0.07   0.20   0.12 
+          50 |  0.60   0.46   0.64   0.58   0.61  -0.09   0.09   0.51   0.61 
+
+             |    28     29     30     31     32     33     34     35     36 
+-------------+---------------------------------------------------------------
+          28 |  1.00                                                         
+          29 |  0.13   1.00                                                  
+          30 |  0.18   0.69   1.00                                           
+          31 |  0.21   0.68   0.57   1.00                                    
+          32 |  0.17   0.66   0.80   0.56   1.00                             
+          33 |  0.08   0.61   0.37   0.37   0.38   1.00                      
+          34 |  0.25   0.24   0.17   0.14   0.36  -0.09   1.00               
+          35 |  0.42   0.21   0.25   0.16   0.16   0.44   0.29   1.00        
+          36 |  0.31   0.52   0.58   0.29   0.32   0.45  -0.08   0.44   1.00 
+          37 | -0.18   0.38   0.47   0.41   0.22   0.34  -0.04   0.38   0.37 
+          38 |  0.18   0.68   0.52   0.69   0.60   0.70   0.20   0.43   0.33 
+          39 |  0.10   0.84   0.63   0.86   0.60   0.50   0.16   0.18   0.50 
+          40 |  0.12   0.24  -0.01   0.05   0.38   0.28   0.22  -0.09  -0.25 
+          41 | -0.03   0.54   0.32   0.57   0.40   0.58  -0.03   0.27   0.16 
+          42 |  0.39   0.65   0.69   0.62   0.54   0.67  -0.01   0.39   0.54 
+          43 |  0.11   0.44   0.46   0.22   0.46   0.81   0.14   0.60   0.53 
+          44 |  0.25   0.44   0.23   0.48   0.43   0.49   0.06   0.13   0.44 
+          45 |  0.34   0.30   0.21   0.32   0.34   0.27   0.57   0.20   0.31 
+          46 |  0.13   0.70   0.77   0.58   0.87   0.58   0.21   0.21   0.49 
+          47 |  0.58   0.34   0.25   0.10   0.31   0.37   0.43   0.46   0.29 
+          48 | -0.20   0.30   0.64   0.44   0.54   0.20   0.14   0.24   0.03 
+          49 |  0.07   0.16   0.25  -0.00   0.31   0.04  -0.01  -0.21   0.22 
+          50 | -0.21   0.70   0.47   0.40   0.42   0.60   0.00   0.21   0.50 
+
+             |    37     38     39     40     41     42     43     44     45 
+-------------+---------------------------------------------------------------
+          37 |  1.00                                                         
+          38 |  0.37   1.00                                                  
+          39 |  0.28   0.69   1.00                                           
+          40 | -0.29   0.25  -0.02   1.00                                    
+          41 |  0.31   0.45   0.57   0.26   1.00                             
+          42 |  0.18   0.73   0.70   0.16   0.51   1.00                      
+          43 |  0.28   0.58   0.41   0.12   0.41   0.63   1.00               
+          44 |  0.06   0.42   0.53   0.25   0.62   0.39   0.32   1.00        
+          45 | -0.09   0.27   0.42   0.08   0.18   0.33   0.45   0.57   1.00 
+          46 |  0.14   0.62   0.73   0.29   0.52   0.73   0.64   0.58   0.47 
+          47 |  0.17   0.23   0.12   0.11   0.17   0.24   0.43   0.31   0.57 
+          48 |  0.34   0.50   0.42  -0.04   0.34   0.53   0.33  -0.09  -0.04 
+          49 | -0.01   0.04   0.14  -0.08   0.04   0.15   0.26   0.17   0.39 
+          50 |  0.48   0.51   0.62  -0.08   0.57   0.38   0.55   0.43   0.24 
+
+             |    46     47     48     49     50 
+-------------+----------------------------------
+          46 |  1.00                             
+          47 |  0.21   1.00                      
+          48 |  0.50  -0.14   1.00               
+          49 |  0.28   0.39  -0.00   1.00        
+          50 |  0.53   0.31   0.27   0.41   1.00 
+
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig04-csd-`figure_stamp'.png", replace
+
+. 
+. xttestpanel vif, graph
+
+------------------------------------------------------------------------------
+Multicollinearity diagnostics  --  fe (within) design
+------------------------------------------------------------------------------
+------------------------------------------------------------------------------
+Variable                          VIF    robust VIF         tol
+------------------------------------------------------------------------------
+x1                              1.137         1.126      0.8792
+x2                            103.018        99.844      0.0097
+x3                            102.880        99.757      0.0097
+x4                              1.005         1.004      0.9954
+------------------------------------------------------------------------------
+Mean VIF = 52.010, mean robust VIF = 50.433.
+Rule of thumb: VIF>10 (tol<0.1) signals serious collinearity. Robust VIF (RVIF,
+WGM-FIMGT) is resistant to high-leverage collinearity-enhancing obs.
+Ref: Ismaeel, Midi & Sani (2021).
+
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig05-vif-`figure_stamp'.png", replace
+
+. 
+. xttestpanel hausman, graph
+
+------------------------------------------------------------------------------
+Specification test: fixed vs random effects
+------------------------------------------------------------------------------
+H0: random effects estimator is consistent (cov(x, mu_i)=0)
+classical = Stata's Hausman contrast; robust = Huber-weighted Mundlak test
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Hausman chi2 (classical)                      144.2013     4   0.0000 ***
+Robust weighted Hausman (Beyaztas)            134.0867     4   0.0000 ***
+------------------------------------------------------------------------------
+Downweighted share of obs. = 16.5% (Huber tuning c=1.345).  Large gap between
+the two => influential/outlying obs.
+Decision rule: reject H0 => prefer FE.  Refs: Mundlak (1978); Beyaztas et al.
+(2021).
+
+. capture graph export ///
+>     "figs/raw/xttestpanel-fig06-hausman-`figure_stamp'.png", replace
+
+. 
+. xttestpanel func, reps(99)
+
+------------------------------------------------------------------------------
+Functional-form test (Lin, Li & Sun 2014)  --  fixed effects
+------------------------------------------------------------------------------
+H0: the parametric (linear) functional form is correctly specified
+Ha: a nonparametric alternative fits better
+------------------------------------------------------------------------------
+Test                                              stat      p-val
+------------------------------------------------------------------------------
+Lin-Li-Sun J_n (standardized)                  10.7997     0.0000  (asymptotic N(
+> 0,1))
+  wild-bootstrap p-value (B=99)                            0.0100
+------------------------------------------------------------------------------
+bandwidth = 0.4217 (Silverman rule x scale).  Ref: Lin, Li & Sun (2014).
+
+. 
+. *----------------------------------------------------------------------*
+. * 5. 示例数据：联网 nlswork 或本机 xtline1
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "示例数据：联网 nlswork 或本机 xtline1"
+示例数据：联网 nlswork 或本机 xtline1
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. capture noisily webuse nlswork, clear
+remote connection failed
+
+. if _rc {
+.     display as error "webuse nlswork 失败，改用内置模拟纵向数据 xtline1。"
+webuse nlswork 失败，改用内置模拟纵向数据 xtline1。
+. 
+.     sysuse xtline1, clear
+(Simulated data of calories consumed for 365 days)
+.     xtset person day
+
+Panel variable: person (strongly balanced)
+ Time variable: day, 01jan2002 to 31dec2002
+         Delta: 1 day
+.     bysort person (day): gen int trend = _n
+.     gen byte weekend = inlist(dow(day), 0, 6)
+.     gen double trend2 = trend^2
+. 
+.     local real_data "xtline1"
+.     local real_source "Stata built-in simulated longitudinal data"
+.     local real_dv "calories"
+.     local real_x "trend weekend trend2"
+. }
+
+. else {
+.     xtset idcode year
+. 
+.     local real_data "nlswork"
+.     local real_source "Stata webuse empirical labor panel"
+.     local real_dv "ln_wage"
+.     local real_x "age tenure hours"
+. }
+
+. 
+. xtreg `real_dv' `real_x', fe
+
+Fixed-effects (within) regression               Number of obs     =      1,095
+Group variable: person                          Number of groups  =          3
+
+R-squared:                                      Obs per group:
+     Within  = 0.2995                                         min =        365
+     Between = 0.0000                                         avg =      365.0
+     Overall = 0.0675                                         max =        365
+
+                                                F(3, 1089)        =     155.19
+corr(u_i, Xb) = 0.0000                          Prob > F          =     0.0000
+
+------------------------------------------------------------------------------
+    calories | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+       trend |     -1.305      0.095   -13.74   0.000       -1.491      -1.118
+     weekend |     -6.386      5.526    -1.16   0.248      -17.230       4.457
+      trend2 |      0.004      0.000    17.45   0.000        0.004       0.005
+       _cons |   3903.969      7.678   508.48   0.000     3888.904    3919.033
+-------------+----------------------------------------------------------------
+     sigma_u |  223.24591
+     sigma_e |  82.543639
+         rho |  .87973188   (fraction of variance due to u_i)
+------------------------------------------------------------------------------
+F test that all u_i=0: F(2, 1089) = 2669.89                  Prob > F = 0.0000
+
+. 
+. xttestpanel all, reps(99)
+
+------------------------------------------------------------------------------
+  xttestpanel -- full panel diagnostic report
+  dependent variable: calories   model: fe
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+Heteroskedasticity test  --  one-way fixed effects (within residuals)
+------------------------------------------------------------------------------
+H0: homoskedastic idiosyncratic disturbances
+Auxiliary regressors (z):  trend weekend trend2
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Breusch-Pagan / Holly-Gardiol LM             1182.6111     3   0.0000 ***
+Koenker (studentized, robust) LM              133.9680     3   0.0000 ***
+Juhl-Sosa-Escudero F (FE within)               50.6952     3   0.0000 ***
+------------------------------------------------------------------------------
+* p<.10 ** p<.05 *** p<.01.  Refs: Juhl & Sosa-Escudero (2014); Feng et al.
+(2020).
+
+------------------------------------------------------------------------------
+Serial-correlation tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: no first-order (AR/MA) serial correlation in the idiosyncratic errors
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Baltagi-Li LM (AR(1)/MA(1), 2-sided)          676.1535     1   0.0000 ***
+Born-Breitung / Wooldridge                      1.6718     1   0.1960 
+Bin Chen (2022) robust portmanteau              1.6718     1   0.1960 
+------------------------------------------------------------------------------
+rho_hat (lag-1 residual autocorr.) = 0.7830.  * p<.10 ** p<.05 *** p<.01.
+Refs: Baltagi & Li (1995); Baltagi, Jung & Song (2010); Chen (2022).
+
+------------------------------------------------------------------------------
+Cross-sectional dependence tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: cross-sectional independence (errors uncorrelated across units)
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Pesaran (2004) CD                               9.4719     .   0.0000 ***
+Baltagi-Kao-Peng (2016) bias-corr. CD           3.3046     .   0.0010 ***
+Breusch-Pagan (1980) LM                       228.8381     3   0.0000 ***
+Pesaran scaled LM (LM_adj)                     92.1980     .   0.0000 ***
+------------------------------------------------------------------------------
+mean|rho_ij| = 0.3965, mean rho_ij = 0.2862.
+Refs: Pesaran (2004,2015); Baltagi, Kao & Peng (2016); Breusch & Pagan (1980).
+
+------------------------------------------------------------------------------
+Multicollinearity diagnostics  --  fe (within) design
+------------------------------------------------------------------------------
+------------------------------------------------------------------------------
+Variable                          VIF    robust VIF         tol
+------------------------------------------------------------------------------
+trend                          16.083             .      0.0622
+weekend                         1.000             .      0.9999
+trend2                         16.083             .      0.0622
+------------------------------------------------------------------------------
+Mean VIF = 11.055, mean robust VIF = ..
+Rule of thumb: VIF>10 (tol<0.1) signals serious collinearity. Robust VIF (RVIF,
+WGM-FIMGT) is resistant to high-leverage collinearity-enhancing obs.
+Ref: Ismaeel, Midi & Sani (2021).
+
+------------------------------------------------------------------------------
+Specification test: fixed vs random effects
+------------------------------------------------------------------------------
+H0: random effects estimator is consistent (cov(x, mu_i)=0)
+classical = Stata's Hausman contrast; robust = Huber-weighted Mundlak test
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Hausman chi2 (classical)                        0.0000     2   1.0000 
+Robust weighted Hausman (Beyaztas)                   .     2        . 
+------------------------------------------------------------------------------
+Downweighted share of obs. = 6.5% (Huber tuning c=1.345).  Large gap between
+the two => influential/outlying obs.
+Decision rule: reject H0 => prefer FE.  Refs: Mundlak (1978); Beyaztas et al.
+(2021).
+
+------------------------------------------------------------------------------
+Functional-form test (Lin, Li & Sun 2014)  --  fixed effects
+------------------------------------------------------------------------------
+H0: the parametric (linear) functional form is correctly specified
+Ha: a nonparametric alternative fits better
+------------------------------------------------------------------------------
+Test                                              stat      p-val
+------------------------------------------------------------------------------
+Lin-Li-Sun J_n (standardized)                  25.5477     0.0000  (asymptotic N(
+> 0,1))
+  wild-bootstrap p-value (B=99)                            0.0100
+------------------------------------------------------------------------------
+bandwidth = 0.3680 (Silverman rule x scale).  Ref: Lin, Li & Sun (2014).
+
+------------------------------------------------------------------------------
+  SUMMARY -- decisions at 5% level
+------------------------------------------------------------------------------
+Heteroskedasticity (BP/Koenker)           p=0.0000  REJECT H0
+Serial correlation (Baltagi-Li)           p=0.0000  REJECT H0
+Serial correlation (Chen 2022)            p=0.1960  do not reject (no serial corr
+> .)
+Cross-section dep. (Pesaran CD)           p=0.0000  REJECT H0
+Cross-section dep. (BKP 2016)             p=0.0010  REJECT H0
+Functional form (Lin-Li-Sun)              p=0.0100  REJECT H0
+FE vs RE (Hausman)                        p=1.0000  do not reject (RE consistent)
+------------------------------------------------------------------------------
+  Mean VIF = 11.055 (collinearity if >10).
+------------------------------------------------------------------------------
+
+. 
+. scalar real_p_het = r(p_het)
+
+. scalar real_p_serial = r(p_serial)
+
+. scalar real_p_csd = r(p_csd)
+
+. scalar real_p_func = r(p_func)
+
+. scalar real_p_hausman = r(p_hausman)
+
+. scalar real_mean_vif = r(mean_vif)
+
+. 
+. post `summary_handle' ///
+>     ("`real_data'") ("`real_source'") ///
+>     (real_p_het) (real_p_serial) (real_p_csd) (real_p_func) ///
+>     (real_p_hausman) (real_mean_vif)
+
+. postclose `summary_handle'
+
+. 
+. preserve
+
+. use "`summary_data'", clear
+
+. export delimited using "outputs/xttestpanel-summary.csv", replace
+file outputs/xttestpanel-summary.csv saved
+
+. restore
+
+. 
+. display as text _newline "`real_data' 的核心返回结果："
+
+xtline1 的核心返回结果：
+
+. display as text "  r(p_het)     = " as result %8.4f real_p_het
+  r(p_het)     =   0.0000
+
+. display as text "  r(p_serial)  = " as result %8.4f real_p_serial
+  r(p_serial)  =   0.0000
+
+. display as text "  r(p_csd)     = " as result %8.4f real_p_csd
+  r(p_csd)     =   0.0000
+
+. display as text "  r(p_func)    = " as result %8.4f real_p_func
+  r(p_func)    =   0.0100
+
+. display as text "  r(p_hausman) = " as result %8.4f real_p_hausman
+  r(p_hausman) =   1.0000
+
+. display as text "  r(mean_vif)  = " as result %8.4f real_mean_vif
+  r(mean_vif)  =  11.0554
+
+. display as text "诊断汇总表已保存到 outputs/xttestpanel-summary.csv。"
+诊断汇总表已保存到 outputs/xttestpanel-summary.csv。
+
+. 
+. scalar list real_p_het real_p_serial real_p_csd real_p_func ///
+>     real_p_hausman real_mean_vif
+real_p_het =  7.549e-29
+real_p_serial =  4.59e-149
+real_p_csd =  2.749e-21
+real_p_func =        .01
+real_p_hausman =          1
+real_mean_vif =  11.055433
+
+. 
+. *----------------------------------------------------------------------*
+. * 6. 如何阅读结果
+. *----------------------------------------------------------------------*
+. 
+. display as text _newline "{hline 70}"
+
+----------------------------------------------------------------------
+
+. display as text "结果阅读规则"
+结果阅读规则
+
+. display as text "{hline 70}"
+----------------------------------------------------------------------
+
+. 
+. display as text "1. 先看原假设。p 值小，表示拒绝对应的理想条件。"
+1. 先看原假设。p 值小，表示拒绝对应的理想条件。
+
+. display as text "2. het 拒绝时，常规标准误可能不可靠。"
+2. het 拒绝时，常规标准误可能不可靠。
+
+. display as text "3. serial 拒绝时，需要考虑面板序列相关下的稳健推断。"
+3. serial 拒绝时，需要考虑面板序列相关下的稳健推断。
+
+. display as text "4. csd 拒绝时，需要考虑共同冲击、时间效应或 CCE 类方法。"
+4. csd 拒绝时，需要考虑共同冲击、时间效应或 CCE 类方法。
+
+. display as text "5. func 拒绝时，线性设定可能遗漏非线性或交互结构。"
+5. func 拒绝时，线性设定可能遗漏非线性或交互结构。
+
+. display as text "6. Hausman 拒绝时，RE 一致性可疑，通常应优先考虑 FE。"
+6. Hausman 拒绝时，RE 一致性可疑，通常应优先考虑 FE。
+
+. display as text "7. VIF 较高时，系数标准误可能被放大，但不等于因果识别失败。"
+7. VIF 较高时，系数标准误可能被放大，但不等于因果识别失败。
+
+. 
+. log close
+      name:  <unnamed>
+       log:  G:\codex_project\xttestpanel\logs/xttestpanel_lecture.log
+  log type:  text
+ closed on:  19 Sep 2026, 17:06:54
+---------------------------------------------------------------------------------

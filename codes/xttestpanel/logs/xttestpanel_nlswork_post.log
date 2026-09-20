@@ -1,0 +1,354 @@
+----------------------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  G:\codex_project\xttestpanel\logs/xttestpanel_nlswork_post.log
+  log type:  text
+ opened on:  19 Sep 2026, 17:58:55
+
+. adopath ++ "x"
+  [1]              "x"
+  [2]  (BASE)      "D:\stata19\ado\base/"
+  [3]  (SITE)      "D:\stata19\ado\site/"
+  [4]              "."
+  [5]  (PERSONAL)  "D:/stata/personal/"
+  [6]  (PLUS)      "D:/stata/plus/"
+  [7]  (OLDPLACE)  "c:\ado/"
+  [8]              "D:/stata/personal//_myado"
+  [9]              "D:\stata\personal\adolian\_ado"
+
+. discard
+
+. which xttestpanel
+x\xttestpanel.ado
+*! xttestpanel 1.0.0  09jun2026
+*! Post-estimation diagnostic test suite for linear panel-data models
+*! Author: Merwan Roudane  <merwanroudane920@gmail.com>
+*! GitHub: https://github.com/merwanroudane
+*!
+*! Implements:
+*!   het      Heteroskedasticity     Juhl & Sosa-Escudero (2014) FE; Holly-Gardiol RE;
+*!                                    Feng, Li, Tong & Luo (2020) two-way FE
+*!   serial   Serial correlation     Baltagi & Li (1995) / Baltagi, Jung & Song (2010);
+*!                                    Bin Chen (2022) robust; Wooldridge (2002)
+*!   csd      Cross-section depend.   Pesaran (2004) CD; Baltagi, Kao & Peng (2016)
+*!                                    bias-corrected CD; Breusch-Pagan (1980) LM
+*!   func     Functional form        Lin, Li & Sun (2014) nonparametric FE test
+*!   hausman  Specification          classical Hausman; Beyaztas et al. (2021) robust
+*!   vif      Multicollinearity      within-group VIF; Ismaeel, Midi & Sani (2021) RVIF
+*!   all      Run the whole suite and print a combined report (+ optional dashboard)
+
+. 
+. * 全样本保留原始年份间隔，不将两次访谈强行当成相邻年份。
+. webuse nlswork, clear
+(National Longitudinal Survey of Young Women, 14-24 years old in 1968)
+
+. xtset idcode year
+
+Panel variable: idcode (unbalanced)
+ Time variable: year, 68 to 88, but with gaps
+         Delta: 1 unit
+
+. xtreg ln_wage age tenure hours, fe
+
+Fixed-effects (within) regression               Number of obs     =     28,036
+Group variable: idcode                          Number of groups  =      4,698
+
+R-squared:                                      Obs per group:
+     Within  = 0.1300                                         min =          1
+     Between = 0.1930                                         avg =        6.0
+     Overall = 0.1460                                         max =         15
+
+                                                F(3, 23335)       =    1162.26
+corr(u_i, Xb) = 0.1300                          Prob > F          =     0.0000
+
+------------------------------------------------------------------------------
+     ln_wage | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+         age |      0.012      0.000    29.52   0.000        0.011       0.013
+      tenure |      0.021      0.001    26.13   0.000        0.019       0.023
+       hours |      0.000      0.000     0.47   0.636       -0.000       0.001
+       _cons |      1.252      0.014    86.81   0.000        1.223       1.280
+-------------+----------------------------------------------------------------
+     sigma_u |  .38904931
+     sigma_e |  .29814534
+         rho |  .63000774   (fraction of variance due to u_i)
+------------------------------------------------------------------------------
+F test that all u_i=0: F(4697, 23335) = 7.95                 Prob > F = 0.0000
+
+. estimates store wage_fe
+
+. gen byte wage_sample = e(sample)
+
+. xttestpanel het
+
+------------------------------------------------------------------------------
+Heteroskedasticity test  --  one-way fixed effects (within residuals)
+------------------------------------------------------------------------------
+H0: homoskedastic idiosyncratic disturbances
+Auxiliary regressors (z): age tenure hours
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Breusch-Pagan / Holly-Gardiol LM             1880.1896     3   0.0000 ***
+Koenker (studentized, robust) LM              403.7090     3   0.0000 ***
+Juhl-Sosa-Escudero F (FE within)              136.5163     3   0.0000 ***
+------------------------------------------------------------------------------
+* p<.10 ** p<.05 *** p<.01.  Refs: Juhl & Sosa-Escudero (2014); Feng et al. (2020).
+
+. return list
+
+scalars:
+                 r(df) =  3
+          r(p_koenker) =  3.48135291312e-87
+            r(koenker) =  403.709011639652
+               r(p_bp) =  0
+                 r(bp) =  1880.18959517599
+
+macros:
+              r(model) : "fe"
+
+. estimates restore wage_fe
+(results wage_fe are active now)
+
+. xttestpanel serial, lags(2)
+
+------------------------------------------------------------------------------
+Serial-correlation tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: no first-order (AR/MA) serial correlation in the idiosyncratic errors
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Baltagi-Li LM (AR(1)/MA(1), 2-sided)          802.4659     1   0.0000 ***
+Born-Breitung / Wooldridge                    177.5484     1   0.0000 ***
+Bin Chen (2022) robust portmanteau            204.1150     2   0.0000 ***
+------------------------------------------------------------------------------
+rho_hat (lag-1 residual autocorr.) = 0.0968.  * p<.10 ** p<.05 *** p<.01.
+Refs: Baltagi & Li (1995); Baltagi, Jung & Song (2010); Chen (2022).
+
+. return list
+
+scalars:
+               r(rho1) =  .0968024642546221
+             r(p_chen) =  4.75323039081e-45
+               r(chen) =  204.115009431123
+       r(p_baltagi_li) =  1.5701226199e-176
+         r(baltagi_li) =  802.465888643981
+
+macros:
+              r(model) : "fe"
+
+. estimates restore wage_fe
+(results wage_fe are active now)
+
+. xttestpanel csd
+
+------------------------------------------------------------------------------
+Cross-sectional dependence tests  --  fixed effects (within) residuals
+------------------------------------------------------------------------------
+H0: cross-sectional independence (errors uncorrelated across units)
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Pesaran (2004) CD                              24.3974     .   0.0000 ***
+Baltagi-Kao-Peng (2016) bias-corr. CD          22.1396     .   0.0000 ***
+Breusch-Pagan (1980) LM                       6.58e+06  11033253   1.0000 
+Pesaran scaled LM (LM_adj)                    516.9716     .   0.0000 ***
+------------------------------------------------------------------------------
+mean|rho_ij| = 0.5166, mean rho_ij = 0.0083.
+Refs: Pesaran (2004,2015); Baltagi, Kao & Peng (2016); Breusch & Pagan (1980).
+
+. return list
+
+scalars:
+            r(abs_rho) =  .516621076111483
+             r(p_bplm) =  1
+               r(bplm) =  6575500.17896923
+              r(p_bkp) =  1.3127740334e-108
+                r(bkp) =  22.1396412190929
+               r(p_cd) =  1.8227072227e-131
+                 r(cd) =  24.3973926338319
+
+macros:
+              r(model) : "fe"
+
+. estimates restore wage_fe
+(results wage_fe are active now)
+
+. xttestpanel hausman
+
+------------------------------------------------------------------------------
+Specification test: fixed vs random effects
+------------------------------------------------------------------------------
+H0: random effects estimator is consistent (cov(x, mu_i)=0)
+classical = Stata's Hausman contrast; robust = Huber-weighted Mundlak test
+------------------------------------------------------------------------------
+Test                                              stat    df    p-val
+------------------------------------------------------------------------------
+Hausman chi2 (classical)                      392.0871     3   0.0000 ***
+Robust weighted Hausman (Beyaztas)            272.9063     3   0.0000 ***
+------------------------------------------------------------------------------
+Downweighted share of obs. = 19.0% (Huber tuning c=1.345).  Large gap between the two =>
+influential/outlying obs.
+Decision rule: reject H0 => prefer FE.  Refs: Mundlak (1978); Beyaztas et al. (2021).
+
+. return list
+
+scalars:
+           r(pct_down) =  18.98987016692823
+                 r(df) =  3
+           r(p_robust) =  7.25559573413e-59
+     r(robust_hausman) =  272.9063295568852
+          r(p_hausman) =  1.14576999735e-84
+            r(hausman) =  392.0871247290637
+
+. estimates restore wage_fe
+(results wage_fe are active now)
+
+. xttestpanel vif
+
+------------------------------------------------------------------------------
+Multicollinearity diagnostics  --  fe (within) design
+------------------------------------------------------------------------------
+------------------------------------------------------------------------------
+Variable                          VIF    robust VIF         tol
+------------------------------------------------------------------------------
+age                             1.446         1.348      0.6917
+tenure                          1.452         1.349      0.6886
+hours                           1.010         1.009      0.9903
+------------------------------------------------------------------------------
+Mean VIF = 1.303, mean robust VIF = 1.235.
+Rule of thumb: VIF>10 (tol<0.1) signals serious collinearity. Robust VIF (RVIF, WGM-FIMGT) is
+resistant to high-leverage collinearity-enhancing obs.
+Ref: Ismaeel, Midi & Sani (2021).
+
+. return list
+
+scalars:
+          r(mean_rvif) =  1.23504813412391
+           r(mean_vif) =  1.30260906001737
+
+matrices:
+               r(rvif) :  1 x 3
+                r(vif) :  1 x 3
+
+. estimates restore wage_fe
+(results wage_fe are active now)
+
+. xttestpanel func, reps(199)
+n=28036 too large for the O(n^2) kernel test; subsample first
+
+------------------------------------------------------------------------------
+Functional-form test (Lin, Li & Sun 2014)  --  fixed effects
+------------------------------------------------------------------------------
+H0: the parametric (linear) functional form is correctly specified
+Ha: a nonparametric alternative fits better
+------------------------------------------------------------------------------
+Test                                              stat      p-val
+------------------------------------------------------------------------------
+Lin-Li-Sun J_n (standardized)                        .          .  (asymptotic N(0,1))
+  wild-bootstrap p-value (B=199)                                .
+------------------------------------------------------------------------------
+bandwidth = . (Silverman rule x scale).  Ref: Lin, Li & Sun (2014).
+
+. return list
+
+scalars:
+                 r(bw) =  .
+             r(p_boot) =  .
+              r(p_asy) =  .
+                 r(jn) =  .
+
+. 
+. * 按个人随机抽取 300 人，保留被抽中者的全部访谈记录。
+. * 避免逐行抽样打碎个人的时间序列；子样本仅作教学演示。
+. preserve
+
+. keep if wage_sample
+(498 observations deleted)
+
+. sort idcode year
+
+. set seed 20260919
+
+. by idcode: gen double draw = runiform() if _n == 1
+(23,338 missing values generated)
+
+. by idcode: replace draw = draw[1]
+(23338 real changes made)
+
+. egen byte tag = tag(idcode)
+
+. sort draw idcode year
+
+. gen long person_rank = sum(tag)
+
+. keep if person_rank <= 300
+(26,250 observations deleted)
+
+. sort idcode year
+
+. assert _N <= 5000
+
+. xtreg ln_wage age tenure hours, fe
+
+Fixed-effects (within) regression               Number of obs     =      1,786
+Group variable: idcode                          Number of groups  =        300
+
+R-squared:                                      Obs per group:
+     Within  = 0.0928                                         min =          1
+     Between = 0.2191                                         avg =        6.0
+     Overall = 0.1402                                         max =         15
+
+                                                F(3, 1483)        =      50.59
+corr(u_i, Xb) = 0.1733                          Prob > F          =     0.0000
+
+------------------------------------------------------------------------------
+     ln_wage | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+         age |      0.011      0.002     6.87   0.000        0.008       0.015
+      tenure |      0.016      0.003     4.69   0.000        0.009       0.023
+       hours |     -0.000      0.001    -0.41   0.681       -0.002       0.001
+       _cons |      1.302      0.058    22.49   0.000        1.189       1.416
+-------------+----------------------------------------------------------------
+     sigma_u |  .40359611
+     sigma_e |  .30070332
+         rho |   .6430395   (fraction of variance due to u_i)
+------------------------------------------------------------------------------
+F test that all u_i=0: F(299, 1483) = 7.37                   Prob > F = 0.0000
+
+. set seed 20260919
+
+. xttestpanel func, reps(199)
+
+------------------------------------------------------------------------------
+Functional-form test (Lin, Li & Sun 2014)  --  fixed effects
+------------------------------------------------------------------------------
+H0: the parametric (linear) functional form is correctly specified
+Ha: a nonparametric alternative fits better
+------------------------------------------------------------------------------
+Test                                              stat      p-val
+------------------------------------------------------------------------------
+Lin-Li-Sun J_n (standardized)                   6.9593     0.0000  (asymptotic N(0,1))
+  wild-bootstrap p-value (B=199)                           0.0050
+------------------------------------------------------------------------------
+bandwidth = 0.3431 (Silverman rule x scale).  Ref: Lin, Li & Sun (2014).
+
+. return list
+
+scalars:
+                 r(bw) =  .343119583843638
+             r(p_boot) =  .005
+              r(p_asy) =  1.71040959174e-12
+                 r(jn) =  6.95925001590182
+
+. restore
+
+. display "NLSWORK_POST_COMPLETE"
+NLSWORK_POST_COMPLETE
+
+. log close
+      name:  <unnamed>
+       log:  G:\codex_project\xttestpanel\logs/xttestpanel_nlswork_post.log
+  log type:  text
+ closed on:  19 Sep 2026, 17:59:55
+----------------------------------------------------------------------------------------------------
