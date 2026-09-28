@@ -1,0 +1,20 @@
+RePPI OLS
+n_labeled=600, n_unlabeled=6000, CI=95.0%, z=1.960
+
+term                      coef          se       lower       upper           p
+Intercept               1.0101      0.0323      0.9469      1.0734   5.22e-215
+x1                      0.5265      0.0355      0.4570      0.5961   8.311e-50
+x2                     -0.3144      0.0342     -0.3814     -0.2473   3.774e-20
+
+augmentation_scale=N/(n+N)=0.909091; fold_weights=[0.3333 0.3333 0.3333]
+human-only coef:    [ 0.9966  0.5342 -0.2687]
+surrogate-only coef:[ 1.005   0.3873 -0.2326]
+
+True beta:        [ 1.   0.5 -0.3]
+Human-only OLS:   [ 0.9966  0.5342 -0.2687]
+Surrogate-only:   [ 1.005   0.3873 -0.2326]
+
+Fold diagnostics:
+rotation=1, R2=0.546, RMSE=0.746, cond(score)=2.70e+00
+rotation=2, R2=0.576, RMSE=0.766, cond(score)=2.36e+00
+rotation=3, R2=0.613, RMSE=0.742, cond(score)=1.80e+00

@@ -1,0 +1,19 @@
+project_title: "RePPI 推文配套材料"
+repository_mode: series
+recommendation: series
+decision_reason: "复用已存在的连享会推文附件仓库，只增加独立子目录。"
+confidence: high
+local_root: "D:/github_lianxh"
+project_path: "D:/github_lianxh/lianxh_blog"
+work_scope: "codes/reppi-ols/"
+repository_name: lianxh_blog
+remote_owner: lianxhcn
+visibility: public
+license: "pending; subtree NOTICE excludes automatic application of root MIT"
+github_pages:
+  required: false
+approval:
+  create_remote: false
+  commit: true
+  push: true
+notes: "用户于 2026-09-28 明确授权 GitHub 附件上传；仅暂存当前子目录。"

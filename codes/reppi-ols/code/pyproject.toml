@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reppi-ols-robust"
+version = "0.2.0"
+description = "Engineering-hardened three-way cross-fitted RePPI implementation for OLS with surrogate outcomes"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "scikit-learn>=1.4",
+]
+
+[tool.setuptools]
+py-modules = ["reppi_ols"]

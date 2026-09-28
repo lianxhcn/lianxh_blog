@@ -1,0 +1,4 @@
+Windows-10-10.0.19045-SP0
+3.11.14 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 18:30:03) [MSC v.1929 64 bit (AMD64)]
+Imported local module: reppi_ols.py (version 0.2.0)
+[('numpy', '2.4.6'), ('scipy', '1.17.1'), ('scikit-learn', '1.9.1'), ('pytest', '9.1.1')]

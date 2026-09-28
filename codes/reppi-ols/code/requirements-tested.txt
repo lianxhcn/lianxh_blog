@@ -1,0 +1,5 @@
+# 本轮验证环境；普通安装使用 requirements.txt
+numpy==2.4.6
+scipy==1.17.1
+scikit-learn==1.9.1
+pytest==9.1.1

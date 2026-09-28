@@ -1,0 +1,9 @@
+R=200, n_labeled=300, n_unlabeled=3000
+true beta:        [ 1.   0.5 -0.3]
+mean estimate:    [ 1.0079  0.4992 -0.3023]
+bias:             [ 0.0079 -0.0008 -0.0023]
+empirical SD:     [0.047  0.0535 0.0516]
+mean reported SE: [0.0461 0.0506 0.0463]
+95% coverage:     [0.96  0.955 0.895]
+human-only SD:    [0.0556 0.0584 0.063 ]
+RePPI/Human SD:   [0.845 0.915 0.819]
